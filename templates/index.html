@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Flow Dashboard</title>
+    <!-- Include Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Include jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Include Popper.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.1/umd/popper.min.js"></script>
+    <!-- Include Bootstrap JS -->
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <!-- Include Bootstrap Select CSS and JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/css/bootstrap-select.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-select/1.13.1/js/bootstrap-select.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            margin-top: 20px;
+        }
+        .card {
+            border-radius: 15px;
+        }
+        .btn {
+            border-radius: 50px;
+        }
+        .form-control, .dropdown-toggle {
+            border-radius: 0; /* Removed custom border-radius */
+        }
+        .graph-container {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+        }
+        .graph-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        @media (max-width: 768px) {
+            .graph-container {
+                padding-bottom: 75%; /* Adjust aspect ratio for smaller screens */
+            }
+        }
+        @media (max-width: 576px) {
+            .graph-container {
+                padding-bottom: 100%; /* Adjust aspect ratio for mobile screens */
+            }
+        }
+        .loading-spinner {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+                @media (min-width: 992px) {
+            .sidebar {
+                position: sticky;
+                top: 20px;
+                height: calc(100vh - 40px);
+                overflow-y: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar for filters and stats -->
+        <div class="col-lg-3 mb-4">
+            <div class="sidebar">
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Filters</h5>
+                        <form id="filter-form">
+                            <div class="form-group">
+                                <label for="selected-year">Year</label>
+                                <select class="form-control" id="selected-year" name="selected_year">
+                                    {% for year in range(latest_year, earliest_year - 1, -1) %}
+                                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="reporting-countries">Reporting Countries</label>
+                                <select class="selectpicker form-control" id="reporting-countries" name="reporting_countries" multiple data-live-search="true">
+                                    <option value="All">All</option>
+                                    {% for country in reporting_countries %}
+                                        <option value="{{ country }}">{{ country }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="partner-countries">Partner Countries</label>
+                                <select class="selectpicker form-control" id="partner-countries" name="partner_countries" multiple data-live-search="true">
+                                    <option value="All">All</option>
+                                    {% for country in partner_countries %}
+                                        <option value="{{ country }}">{{ country }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary mb-2">Filter</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Trade Statistics</h5>
+                        <p>Intra-African Trade Value: <span id="intra-african-trade-value">{{ intra_african_trade_value }}</span></p>
+                        <p>Intra-African Trade Percentage: <span id="intra-african-trade-percentage">{{ intra_african_trade_percentage }}</span>%</p>
+                        <p>Extra-African Trade Value: <span id="extra-african-trade-value">{{ extra_african_trade_value }}</span></p>
+                        <p>Extra-African Trade Percentage: <span id="extra-african-trade-percentage">{{ extra_african_trade_percentage }}</span>%</p>
+                        <div id="missing-countries" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="text-center mb-3">Total trade in <span id="selected-year-display">{{ selected_year }}</span></h4>
+                    <h6 style="color: orange;" class="text-center mb-3">Orange: <span>Extra african trade</span></h6>
+                    <h6 style="color: green;" class="text-center mb-3">Green: <span>Intra african trade</span></h6>
+                    <div class="graph-container">
+                        <div id="graph-container">{{ graph_html|safe }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    <div class="loading-spinner">
+        <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Loading...</span>
+        </div>
+    </div>
+    <script>
+        $(document).ready(function() {
+            $('.selectpicker').selectpicker();
+
+            $('#filter-form').on('submit', function(event) {
+                event.preventDefault();
+                $('.loading-spinner').show();
+
+                fetch('/filter', {
+                    method: 'POST',
+                    body: new FormData(this)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    $('#graph-container').html(data.graph_html);
+                    $('#total-trade-value').text(data.total_trade_value);
+                    $('#intra-african-trade-value').text(data.intra_african_trade_value);
+                    $('#intra-african-trade-percentage').text(data.intra_african_trade_percentage);
+                    $('#extra-african-trade-value').text(data.extra_african_trade_value);
+                    $('#extra-african-trade-percentage').text(data.extra_african_trade_percentage);
+                    $('#selected-year-display').text($('#selected-year').val());
+
+                    // Handle missing countries
+                    const missingCountriesElement = $('#missing-countries');
+                    if (data.missing_countries && data.missing_countries.length > 0) {
+                        missingCountriesElement.html('<strong>Non-reported data for:</strong> ' + data.missing_countries.join(', '));
+                        missingCountriesElement.show();
+                    } else {
+                        missingCountriesElement.hide();
+                    }
+
+                    $('.loading-spinner').hide();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    $('.loading-spinner').hide();
+                    alert('An error occurred while processing your request.');
+                });
+            });
+        });
+    </script>
+</body>
+</html>

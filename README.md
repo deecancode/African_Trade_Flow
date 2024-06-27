@@ -15,6 +15,8 @@ This project provides an interactive web application to visualize trade flows be
 git clone https://github.com/deecancode/African_Trade_Flow.git
 cd African_Trade_Flow
 
+2. Download files and add them to the root folder https://file.io/RDFYtfFoOEXF
+
 ## Usage
 
 1. Ensure you have the required data files:
